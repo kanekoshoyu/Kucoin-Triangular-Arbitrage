@@ -1,0 +1,7 @@
+Follow https://medium.com/analytics-vidhya/how-to-create-a-python-library-7d5aea80cc3f
+
+# Test and build
+python setup.py pytest
+python setup.py bdist_wheel
+# Load
+pip install ./dist/cryptobot-0.1.0-py3-none-any.whl
