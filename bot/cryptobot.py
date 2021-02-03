@@ -59,7 +59,7 @@ class Circle(object):
 
 #Try with only 2 cycles first
 class Bot(object):
-
+    circles = []
     def __init__(self):
         self.init_time = datetime.now()
         try:
@@ -86,13 +86,8 @@ class Bot(object):
         mean = (bestAsk+bestBid)/2.0    #Last updated minute
         return mean
     
-    def place_order(self):
-        coin = self.mean_price('BTC', 'USDT')
-        print(coin)
-
-    
     def find_arbitrage(self, circle):
-        threshold=0.6
+        threshold=0.5
         #take alt as comparator
         try:
             alt_fp = self.mean_price(circle.alt, circle.top) * self.mean_price(circle.top, circle.base)
@@ -115,23 +110,34 @@ class Bot(object):
             # print('only',diff,'%, wait')
             circle.action = Action.wait
 
-    def run(self):
-        circles = [Circle('VIDT'), Circle('NANO'), Circle('GO')]#highly volatile!
+    def best_circle(self):
+        #first find the biggest opportunity
+        print('Sorting the best opportunity...')
+        best_circle = self.circles[0]
+        for circle in self.circles:
+            print(circle.alt)
+            self.find_arbitrage(circle)
+            if abs(circle.diff)>abs(best_circle.diff):
+                best_circle = circle
+        return best_circle
 
+
+    def place_order(self):
+        coin = self.mean_price('BTC', 'USDT')
+        print(coin)
+
+    def feed_coins(self, coins):
+        for coin in coins:
+            self.circles.append(Circle(coin))
+
+    def run(self):
         while True:
-            #first find the biggest opportunity
-            print('Sorting the best opportunity...')
-            best_circle = circles[0]
-            for circle in circles:
-                print(circle.alt)
-                self.find_arbitrage(circle)
-                if abs(circle.diff)>abs(best_circle.diff):
-                    best_circle = circle
-            print('best circle is :',best_circle.alt)
+            best_circle = self.best_circle()
+            
             if best_circle.action != Action.wait:
                 print('trade',best_circle.alt, best_circle.diff,'\r\n')
             else:
-                print('skip to next iteration', best_circle.diff, '\r\n')
+                print('skip', best_circle.alt, best_circle.diff, '\r\n')
 
                     #Trade here
                     # circle.place_order()
@@ -139,5 +145,8 @@ class Bot(object):
 
 #run
 print('Crypto Bot')
+coins = ['VIDT','NANO','GO','ETH']
+
 bot = Bot()
+bot.feed_coins(coins)
 bot.run()
