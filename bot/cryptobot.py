@@ -74,9 +74,9 @@ class Bot(object):
         # self.kucoin = KuCoinApi()
         print('New Bot Setup with valid KuCoin Environment at ',self.init_time)
 
-    def trade_code(self, coin_top, coin_low):
+    def trade_code(self, coin_hi, coin_lo):
         #sorting based on a table, ETH<BTC<USDT
-        return coin_top + '-' + coin_low
+        return coin_hi + '-' + coin_lo
 
     def mean_price(self,coin_hi, coin_lo):
         code = self.trade_code(coin_hi, coin_lo)
@@ -87,7 +87,7 @@ class Bot(object):
         return mean
     
     def find_arbitrage(self, circle):
-        threshold=0.5
+        threshold=0.3
         #take alt as comparator
         try:
             alt_fp = self.mean_price(circle.alt, circle.top) * self.mean_price(circle.top, circle.base)
@@ -121,27 +121,57 @@ class Bot(object):
                 best_circle = circle
         return best_circle
 
-
-    def place_order(self):
-        coin = self.mean_price('BTC', 'USDT')
-        print(coin)
-
     def feed_coins(self, coins):
         for coin in coins:
             self.circles.append(Circle(coin))
 
+    def single_trade(self, coin_hi, coin_lo, command):
+        code = self.trade_code(coin_hi, coin_lo)
+        if command == 'buy':
+            price_hi = self.market.get_ticker(code)['bestAsk']
+            amount_lo = self.user.get_withdrawal_quota(coin_lo)
+            amount_hi = price_hi*amount_lo
+            try:
+                order_id = self.trade.create_limit_order(code, command, amount_hi, price_hi)
+                print("Buy order success", order_id)
+            except Exception as e:
+                print("Buy order fail", e)
+        elif command == 'sell':
+            price_lo = self.market.get_ticker(code)['bestBid']
+            amount_hi = self.user.get_withdrawal_quota(coin_hi)
+            amount_lo = price_lo*amount_hi
+            try:
+                order_id = self.trade.create_limit_order(code, command, amount_lo, price_lo)
+                print("Sell order success", order_id)
+            except Exception as e:
+                print("Sell order fail", e)
+        else:
+            print('invalid command',command)
+
+
+
+    def serial_trade(self, circle):
+        #default: buy_near
+        print('serial trade')
+        if circle.action == Action.buy_far:
+            self.single_trade(circle.top, circle.base, 'buy')
+            self.single_trade(circle.alt, circle.top, 'buy')
+            self.single_trade(circle.alt, circle.base, 'sell')
+        elif circle.action ==Action.buy_near:
+            self.single_trade(circle.alt, circle.base, 'buy')
+            self.single_trade(circle.alt, circle.top, 'sell')
+            self.single_trade(circle.top, circle.base, 'sell')
+        print('\r\n')
+
     def run(self):
         while True:
             best_circle = self.best_circle()
-            
             if best_circle.action != Action.wait:
-                print('trade',best_circle.alt, best_circle.diff,'\r\n')
+                print('trade',best_circle.alt, best_circle.diff)
+                self.serial_trade(best_circle)
             else:
-                print('skip', best_circle.alt, best_circle.diff, '\r\n')
-
-                    #Trade here
-                    # circle.place_order()
-                # print('near: ',circle.near_counter,'far: ',circle.far_counter)
+                print('skip', best_circle.alt, best_circle.diff)
+            print('\r\n')
 
 #run
 print('Crypto Bot')
