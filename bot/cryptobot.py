@@ -128,18 +128,20 @@ class Bot(object):
     def single_trade(self, coin_hi, coin_lo, command):
         code = self.trade_code(coin_hi, coin_lo)
         if command == 'buy':
-            price_hi = self.market.get_ticker(code)['bestAsk']
-            amount_lo = self.user.get_withdrawal_quota(coin_lo)
+            price_hi = float(self.market.get_ticker(code)['bestAsk'])
+            amount_lo = float(self.user.get_withdrawal_quota(coin_lo)['remainAmount'])
             amount_hi = price_hi*amount_lo
+            print(code, command, amount_hi, price_hi)
             try:
                 order_id = self.trade.create_limit_order(code, command, amount_hi, price_hi)
                 print("Buy order success", order_id)
             except Exception as e:
                 print("Buy order fail", e)
         elif command == 'sell':
-            price_lo = self.market.get_ticker(code)['bestBid']
-            amount_hi = self.user.get_withdrawal_quota(coin_hi)
+            price_lo = float(self.market.get_ticker(code)['bestBid'])
+            amount_hi = float(self.user.get_withdrawal_quota(coin_hi)['remainAmount'])
             amount_lo = price_lo*amount_hi
+            print(code, command, amount_lo, price_lo)
             try:
                 order_id = self.trade.create_limit_order(code, command, amount_lo, price_lo)
                 print("Sell order success", order_id)
@@ -161,7 +163,6 @@ class Bot(object):
             self.single_trade(circle.alt, circle.base, 'buy')
             self.single_trade(circle.alt, circle.top, 'sell')
             self.single_trade(circle.top, circle.base, 'sell')
-        print('\r\n')
 
     def run(self):
         while True:
