@@ -1,6 +1,6 @@
 from kucoin.client import User, Market, Trade
 from datetime import datetime
-import time
+import time, enum
 
 
 api_key = '6012f5afbd074e0006b769ba'
@@ -33,28 +33,28 @@ class TransactionRecord(object):
     def report(self):
         print('sold ',self.coin_sold,',  bought ',self.coin_bought,' at ',self.price,', in ',self.time)
 
+class Action(enum.Enum):
+    wait = 0
+    buy_near = 1
+    buy_far = 2
+
 class Circle(object):
     top='BTC'
     base='USDT'
     far_counter=0.0
     near_counter=0.0
+    diff = 0.0
     # alt=''
     
     def __init__(self, alt_coin):
         self.alt=alt_coin
-        self.opportunity_flag=False
+        self.action=Action.wait
         print(alt_coin,' Circle Setup')
     
     def balance(self):
         # kucoin.user.get_withdrawal_quota(alt)
         #KuCoinApi.user
-        print("")
-
-
-    def place_order(self):
-        #kucoin.
-        print("")
-        # kucoin.trade.create_limit_order()
+        print('')
 
 
 #Try with only 2 cycles first
@@ -65,19 +65,18 @@ class Bot(object):
         try:
             self.user = User(api_key, api_secret, api_passphrase)
             self.market = Market(url='https://api.kucoin.com')
-            self.trade = Trade(key=api_key, secret=api_secret, passphrase=api_passphrase, is_sandbox=False, url='')
+            self.trade = Trade(key=api_key, secret=api_secret, passphrase=api_passphrase, is_sandbox=True, url='')
             print('KuCoin Environment Setup')
         except Exception as e:
             print('KuCoin Environment Fail')
             print(e)
 
         # self.kucoin = KuCoinApi()
-        print("New Bot Setup with valid KuCoin Environment at ",self.init_time)
+        print('New Bot Setup with valid KuCoin Environment at ',self.init_time)
 
     def trade_code(self, coin_top, coin_low):
-        #sorting based on a table
-        #ETH<BTC<USDT
-        return coin_top + "-" + coin_low
+        #sorting based on a table, ETH<BTC<USDT
+        return coin_top + '-' + coin_low
 
     def mean_price(self,coin_hi, coin_lo):
         code = self.trade_code(coin_hi, coin_lo)
@@ -85,17 +84,15 @@ class Bot(object):
         bestAsk = float(ticker['bestAsk'])
         bestBid = float(ticker['bestBid'])
         mean = (bestAsk+bestBid)/2.0    #Last updated minute
-        # qll = (q[-1][2]+q[-1][3])/2   #second last updated minute
-        # print(code,": ",code)
-        #make quotation and calculate the latest price with the engine
         return mean
     
-    def try_quote(self):
+    def place_order(self):
         coin = self.mean_price('BTC', 'USDT')
         print(coin)
 
     
     def find_arbitrage(self, circle):
+        threshold=0.6
         #take alt as comparator
         try:
             alt_fp = self.mean_price(circle.alt, circle.top) * self.mean_price(circle.top, circle.base)
@@ -105,42 +102,42 @@ class Bot(object):
             print(e)
             alt_fp=1.0
             alt_np=1.0
-        # print("far:",alt_fp)
-        # print("near:",alt_np)
-        diff = 0.0
-        if (alt_np<alt_fp):
-            diff=(alt_fp-alt_np)/alt_fp*100
-            print("near is cheaper by ",diff,"%")
-            circle.far_counter+=diff
+        #print('far:',alt_fp)
+        #print('near:',alt_np)
+        circle.diff = (alt_fp-alt_np)/alt_fp*100
+        if circle.diff>threshold:
+            # print('near is cheaper by ',diff,'%')
+            circle.action = Action.buy_near
+        elif abs(circle.diff)>threshold:
+            # print('far is cheaper by ',diff,'%') 
+            circle.action = Action.buy_far
         else:
-            diff = (alt_np-alt_fp)/alt_np*100
-            print("far is cheaper by ",diff,"%") 
-            circle.near_counter+=diff
-
-        if diff > 0.4:
-            circle.opportunity_flag=True
+            # print('only',diff,'%, wait')
+            circle.action = Action.wait
 
     def run(self):
-        circles = [Circle('ETH'), Circle('GO')]#highly volatile!
-        circles = [Circle('VIDT')]
-
-        # alt_base = self.trade_code(alt[0], base)
-        # alt_mid =  self.trade_code(alt[1], base)
-        # mid_base =  self.trade_code(alt[0], alt[1])
+        circles = [Circle('VIDT'), Circle('NANO'), Circle('GO')]#highly volatile!
 
         while True:
+            #first find the biggest opportunity
+            print('Sorting the best opportunity...')
+            best_circle = circles[0]
             for circle in circles:
                 print(circle.alt)
                 self.find_arbitrage(circle)
-                if circle.opportunity_flag:
-                    circle.opportunity_flag=False
-                    print("Opportunity found!")
+                if abs(circle.diff)>abs(best_circle.diff):
+                    best_circle = circle
+            print('best circle is :',best_circle.alt)
+            if best_circle.action != Action.wait:
+                print('trade',best_circle.alt, best_circle.diff,'\r\n')
+            else:
+                print('skip to next iteration', best_circle.diff, '\r\n')
+
                     #Trade here
-                    circle.place_order()
+                    # circle.place_order()
                 # print('near: ',circle.near_counter,'far: ',circle.far_counter)
 
 #run
-print("Crypto Bot")
+print('Crypto Bot')
 bot = Bot()
 bot.run()
-bot.try_quote()
