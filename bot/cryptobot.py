@@ -2,7 +2,6 @@ from kucoin.client import User, Market, Trade
 from datetime import datetime
 import time, enum
 
-
 api_key = '6012f5afbd074e0006b769ba'
 api_secret = '07d14b4f-b8ea-4adb-99f2-dd65d302e0bd'
 api_passphrase = 'passphrase'
@@ -65,7 +64,7 @@ class Bot(object):
         try:
             self.user = User(api_key, api_secret, api_passphrase)
             self.market = Market(url='https://api.kucoin.com')
-            self.trade = Trade(key=api_key, secret=api_secret, passphrase=api_passphrase, is_sandbox=True, url='')
+            self.trade = Trade(key=api_key, secret=api_secret, passphrase=api_passphrase, is_sandbox=False)
             print('KuCoin Environment Setup')
         except Exception as e:
             print('KuCoin Environment Fail')
@@ -128,25 +127,35 @@ class Bot(object):
     def single_trade(self, coin_hi, coin_lo, command):
         code = self.trade_code(coin_hi, coin_lo)
         if command == 'buy':
-            price_hi = float(self.market.get_ticker(code)['bestAsk'])
-            amount_lo = float(self.user.get_withdrawal_quota(coin_lo)['remainAmount'])
-            amount_hi = price_hi*amount_lo
-            print(code, command, amount_hi, price_hi)
-            try:
-                order_id = self.trade.create_limit_order(code, command, amount_hi, price_hi)
-                print("Buy order success", order_id)
-            except Exception as e:
-                print("Buy order fail", e)
+            price = float(self.market.get_ticker(code)['price'])
+            # price_hi = float(tick['bestAsk'])#Lowest Sold
+            # price_lo = float(tick['bestBid'])#Highest Bought
+            amount_lo = float(self.user.get_transferable(coin_lo,'TRADE')['available'])
+            amount_hi = amount_lo/price
+            if (amount_lo == 0.0):
+                print('fund not available')
+            else:
+                print(code, command, amount_hi, price, amount_lo)
+                try:
+                    order_id = self.trade.create_limit_order(code, command, amount_hi, price)
+                    print("Buy order success", order_id)
+                except Exception as e:
+                    print("Buy order fail", e)
         elif command == 'sell':
-            price_lo = float(self.market.get_ticker(code)['bestBid'])
-            amount_hi = float(self.user.get_withdrawal_quota(coin_hi)['remainAmount'])
-            amount_lo = price_lo*amount_hi
-            print(code, command, amount_lo, price_lo)
-            try:
-                order_id = self.trade.create_limit_order(code, command, amount_lo, price_lo)
-                print("Sell order success", order_id)
-            except Exception as e:
-                print("Sell order fail", e)
+            price = float(self.market.get_ticker(code)['price'])
+            # price_hi = float(self.market.get_ticker(code)['bestAsk'])#Lowest Sold
+            # price_lo = float(self.market.get_ticker(code)['bestBid'])#Highest Bought
+            amount_hi = float(self.user.get_transferable(coin_hi,'TRADE')['available'])
+            amount_lo = amount_hi*price
+            if (amount_hi == 0.0):
+                print('fund not available')
+            else:
+                print(code, command, amount_hi, price, amount_lo)
+                try:
+                    order_id = self.trade.create_limit_order(code, command, amount_lo, price)
+                    print("Sell order success", order_id)
+                except Exception as e:
+                    print("Sell order fail", e)
         else:
             print('invalid command',command)
 

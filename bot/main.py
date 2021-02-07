@@ -2,8 +2,10 @@ from cryptobot import Bot
 import time
 
 print("Crypto App")
+coins = ['VIDT','NANO','GO','ETH']
 
 bot = Bot()
+bot.feed_coins(coins)
 bot.run()
 
 #ToDo for next generation: faster quotation by Socket
