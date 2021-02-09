@@ -1,6 +1,7 @@
 from kucoin.client import User, Market, Trade
 from datetime import datetime
 import time, enum
+from decimal import Decimal
 
 api_key = '6012f5afbd074e0006b769ba'
 api_secret = '07d14b4f-b8ea-4adb-99f2-dd65d302e0bd'
@@ -18,6 +19,26 @@ api_passphrase = 'passphrase'
 #     except Exception as e:
 #         print('KuCoin Environment Fail')
 #         print(e)
+
+minSize = {
+		'USD' : '0.01',
+		'BTC' : '0.00001',
+		'ETH' : '0.00001',
+		'VIDT' : '0.1',
+		'NANO' : '0.1',#not sure
+		'GO' : '1',
+		'BNB' : '0.00001',#not sure
+	}
+
+increment = {
+		'USD' : '0.000001',
+		'BTC' : '0.00000001',
+		'ETH' : '0.00000001',
+		'VIDT' : '0.0001',
+		'NANO' : '0.0001',
+		'GO' : '0.0001',
+		'BNB' : '0.00000001',
+	}
 
 class TransactionRecord(object):
     id=None
@@ -80,13 +101,13 @@ class Bot(object):
     def mean_price(self,coin_hi, coin_lo):
         code = self.trade_code(coin_hi, coin_lo)
         ticker = self.market.get_ticker(code)
-        bestAsk = float(ticker['bestAsk'])
-        bestBid = float(ticker['bestBid'])
-        mean = (bestAsk+bestBid)/2.0    #Last updated minute
+        bestAsk = Decimal(ticker['bestAsk'])
+        bestBid = Decimal(ticker['bestBid'])
+        mean = (bestAsk+bestBid)/Decimal('2.0')    #Last updated minute
         return mean
     
     def find_arbitrage(self, circle):
-        threshold=0.3
+        threshold=Decimal('0.3')
         #take alt as comparator
         try:
             alt_fp = self.mean_price(circle.alt, circle.top) * self.mean_price(circle.top, circle.base)
@@ -94,11 +115,11 @@ class Bot(object):
         except Exception as e:
             print('Quote Fail')
             print(e)
-            alt_fp=1.0
-            alt_np=1.0
+            alt_fp=Decimal('1.0')
+            alt_np=Decimal('1.0')
         #print('far:',alt_fp)
         #print('near:',alt_np)
-        circle.diff = (alt_fp-alt_np)/alt_fp*100
+        circle.diff = (alt_fp-alt_np)/alt_fp*Decimal('100')
         if circle.diff>threshold:
             # print('near is cheaper by ',diff,'%')
             circle.action = Action.buy_near
@@ -123,36 +144,54 @@ class Bot(object):
     def feed_coins(self, coins):
         for coin in coins:
             self.circles.append(Circle(coin))
+            
+    def round_by_increment(self, amount_dec, increment_dec):
+        mul = Decimal(round(amount_dec/increment_dec))
+        ans = mul*increment_dec
+        return ans
 
     def single_trade(self, coin_hi, coin_lo, command):
+        #hi: quote, lo: base
+        
+        increment_hi = Decimal(increment[coin_hi])
+
         code = self.trade_code(coin_hi, coin_lo)
         if command == 'buy':
-            price = float(self.market.get_ticker(code)['price'])
-            # price_hi = float(tick['bestAsk'])#Lowest Sold
-            # price_lo = float(tick['bestBid'])#Highest Bought
-            amount_lo = float(self.user.get_transferable(coin_lo,'TRADE')['available'])
-            amount_hi = amount_lo/price
-            if (amount_lo == 0.0):
+            # price_hi = Decimal(tick['bestAsk'])#Lowest Sold
+            # price_lo = Decimal(tick['bestBid'])#Highest Bought
+            price = Decimal(self.market.get_ticker(code)['price'])
+            available_lo = Decimal(self.user.get_transferable(coin_lo,'TRADE')['available'])*Decimal('0.95')
+            print('available_lo', available_lo)
+            amount_hi = self.round_by_increment(available_lo/price, increment_hi)
+            print('amount_hi', amount_hi)
+            if (amount_hi == Decimal('0.0')):
                 print('fund not available')
+            elif (amount_hi < Decimal(minSize[coin_hi])):
+                print('fund insufficient')
             else:
-                print(code, command, amount_hi, price, amount_lo)
+                print(code, command, amount_hi, price)
                 try:
-                    order_id = self.trade.create_limit_order(code, command, amount_hi, price)
+                    order_id = self.trade.create_limit_order(code, command, str(amount_hi), price)
                     print("Buy order success", order_id)
                 except Exception as e:
                     print("Buy order fail", e)
         elif command == 'sell':
-            price = float(self.market.get_ticker(code)['price'])
-            # price_hi = float(self.market.get_ticker(code)['bestAsk'])#Lowest Sold
-            # price_lo = float(self.market.get_ticker(code)['bestBid'])#Highest Bought
-            amount_hi = float(self.user.get_transferable(coin_hi,'TRADE')['available'])
-            amount_lo = amount_hi*price
-            if (amount_hi == 0.0):
+            # price_hi = Decimal(self.market.get_ticker(code)['bestAsk'])#Lowest Sold
+            # price_lo = Decimal(self.market.get_ticker(code)['bestBid'])#Highest Bought
+            price = Decimal(self.market.get_ticker(code)['price'])
+            avaliable_hi = Decimal(self.user.get_transferable(coin_hi,'TRADE')['available'])*Decimal('0.95')
+            print('available_hi', avaliable_hi)
+            print('increment_hi', increment_hi)
+            amount_hi = self.round_by_increment(avaliable_hi, increment_hi)
+            print('amount_hi', amount_hi)
+            if (amount_hi == Decimal('0.0')):
                 print('fund not available')
+            elif (amount_hi < Decimal(minSize[coin_hi])):
+                print('fund insufficient')
             else:
-                print(code, command, amount_hi, price, amount_lo)
+                print(code, command, amount_hi, price)
                 try:
-                    order_id = self.trade.create_limit_order(code, command, amount_lo, price)
+                    order_id = self.trade.create_limit_order(code, command, amount_hi, price)
                     print("Sell order success", order_id)
                 except Exception as e:
                     print("Sell order fail", e)
@@ -185,7 +224,7 @@ class Bot(object):
 
 #run
 print('Crypto Bot')
-coins = ['VIDT','NANO','GO','ETH']
+coins = ['VIDT','NANO','GO']
 
 bot = Bot()
 bot.feed_coins(coins)
