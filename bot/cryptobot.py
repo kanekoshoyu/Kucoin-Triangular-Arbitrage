@@ -152,53 +152,46 @@ class Bot(object):
 
     def single_trade(self, coin_hi, coin_lo, command):
         #hi: quote, lo: base
-        
         increment_hi = Decimal(increment[coin_hi])
-
         code = self.trade_code(coin_hi, coin_lo)
-        if command == 'buy':
-            # price_hi = Decimal(tick['bestAsk'])#Lowest Sold
-            # price_lo = Decimal(tick['bestBid'])#Highest Bought
+        amount_hi = Decimal('0.0')
+        try:
+            # price_hi = Decimal(self.market.get_ticker(code)['bestAsk'])#Lowest Sold, or bestBid for highest bought
             price = Decimal(self.market.get_ticker(code)['price'])
-            available_lo = Decimal(self.user.get_transferable(coin_lo,'TRADE')['available'])*Decimal('0.95')
-            print('available_lo', available_lo)
-            amount_hi = self.round_by_increment(available_lo/price, increment_hi)
-            print('amount_hi', amount_hi)
-            if (amount_hi == Decimal('0.0')):
-                print('fund not available')
-            elif (amount_hi < Decimal(minSize[coin_hi])):
-                print('fund insufficient')
-            else:
-                print(code, command, amount_hi, price)
+            if command == 'buy':
                 try:
-                    order_id = self.trade.create_limit_order(code, command, str(amount_hi), price)
-                    print("Buy order success", order_id)
+                    available_lo = Decimal(self.user.get_transferable(coin_lo,'TRADE')['available'])*Decimal('0.95')
+                    print('available_lo', coin_lo, available_lo)
                 except Exception as e:
-                    print("Buy order fail", e)
-        elif command == 'sell':
-            # price_hi = Decimal(self.market.get_ticker(code)['bestAsk'])#Lowest Sold
-            # price_lo = Decimal(self.market.get_ticker(code)['bestBid'])#Highest Bought
-            price = Decimal(self.market.get_ticker(code)['price'])
-            avaliable_hi = Decimal(self.user.get_transferable(coin_hi,'TRADE')['available'])*Decimal('0.95')
-            print('available_hi', avaliable_hi)
-            print('increment_hi', increment_hi)
-            amount_hi = self.round_by_increment(avaliable_hi, increment_hi)
-            print('amount_hi', amount_hi)
-            if (amount_hi == Decimal('0.0')):
-                print('fund not available')
-            elif (amount_hi < Decimal(minSize[coin_hi])):
-                print('fund insufficient')
-            else:
-                print(code, command, amount_hi, price)
+                    print("Account fail", e)
+                    available_lo = Decimal('0.0')
+                amount_hi = self.round_by_increment(available_lo/price, increment_hi)
+            elif command == 'sell':
                 try:
-                    order_id = self.trade.create_limit_order(code, command, amount_hi, price)
-                    print("Sell order success", order_id)
+                    avaliable_hi = Decimal(self.user.get_transferable(coin_hi,'TRADE')['available'])*Decimal('0.95')
+                    print('available_hi', avaliable_hi)
                 except Exception as e:
-                    print("Sell order fail", e)
+                    print("Account fail", e)
+                    avaliable_hi = Decimal('0.0')
+                amount_hi = self.round_by_increment(avaliable_hi, increment_hi)
+            else:
+                print('invalid command',command)
+        except Exception as e:
+            print("Ticker fail", e)
+            
+        print('amount_hi', amount_hi)
+        if (amount_hi > Decimal(minSize[coin_hi])):
+            print(code, command, amount_hi, price)
+            try:
+                order_id = self.trade.create_limit_order(code, command, str(amount_hi), str(price))
+                print(command, " order success", order_id)
+            except Exception as e:
+                print(command, " order fail", e)
         else:
-            print('invalid command',command)
-
-
+            if (amount_hi == Decimal('0.0')):
+                print('fund not available')
+            else:
+                print('fund insufficient')
 
     def serial_trade(self, circle):
         #default: buy_near
@@ -224,7 +217,8 @@ class Bot(object):
 
 #run
 print('Crypto Bot')
-coins = ['VIDT','NANO','GO']
+# coins = ['VIDT','NANO','GO', 'ETH']
+coins = ['VIDT','GO']
 
 bot = Bot()
 bot.feed_coins(coins)
