@@ -18,13 +18,13 @@ minSize = {
 	}
 
 increment = {
-		'USD' : '0.000001',
-		'BTC' : '0.00000001',
-		'ETH' : '0.00000001',
-		'VIDT' : '0.0001',
-		'NANO' : '0.0001',
-		'GO' : '0.0001',
-		'BNB' : '0.0001',
+		'USD' : '0.01',
+		'BTC' : '0.00001',
+		'ETH' : '0.00001',
+		'VIDT' : '0.01',
+		'NANO' : '0.001',
+		'GO' : '1',
+		'BNB' : '0.001',
 	}
 
 class TransactionRecord(object):
@@ -73,26 +73,23 @@ class Bot(object):
         except Exception as e:
             print('KuCoin Environment Fail')
             print(e)
-
         # self.kucoin = KuCoinApi()
-        print('New Bot Setup with valid KuCoin Environment at ',self.init_time)
+        print('New Bot Setup with valid KuCoin Environment at',self.init_time)
 
     def trade_code(self, coin_quote, coin_base):
         #sorting based on a table, ETH<BTC<USDT
         return coin_quote + '-' + coin_base
 
-    # def price(self,coin_quote, coin_base, price_type):
-    #     code = self.trade_code(coin_quote, coin_base)
-    #     return Decimal(self.market.get_ticker(code)[price_type])
-
     def tick(self,coin_quote, coin_base):
         code = self.trade_code(coin_quote, coin_base)
         return self.market.get_ticker(code)
 
+    def mean(self, price_order: str, price_mean: str):
+        return ( Decimal(price_order) + Decimal(price_mean) ) / Decimal('2.0')
+
     def find_arbitrage(self, c: Circle):
         profit_near=Decimal('0')
         profit_far=Decimal('0')
-        #take alt as comparator
         try:
             # Usual Trading, buy at bestBid, sell at bestAsk  
             # Faster trading, lower profit: buy at bestAsk, sell at bestBid
@@ -100,11 +97,15 @@ class Bot(object):
             altmid = self.tick(c.alt, c.mid)
             midbase = self.tick(c.mid, c.base)
 
-            alt_buy = Decimal(altmid['price']) * Decimal(midbase['price'])
-            alt_sell = Decimal(altbase['bestBid']) 
-            profit_far = (alt_sell-alt_buy)/alt_buy * Decimal('100')
-            alt_buy = Decimal(altbase['price']) 
-            alt_sell = Decimal(altmid['bestBid']) * Decimal(midbase['price']) 
+            # alt_buy = Decimal(altmid['price']) * Decimal(midbase['price'])
+            # alt_sell = Decimal(altbase['bestBid']) 
+            alt_buy     = self.mean(altmid['bestAsk'], altmid['price']) * self.mean(midbase['bestAsk'], midbase['price'])
+            alt_sell    = self.mean(altbase['bestBid'], altbase['price'])
+            profit_far  = (alt_sell-alt_buy)/alt_buy * Decimal('100')
+            # alt_buy = Decimal(altbase['price']) 
+            # alt_sell = Decimal(altmid['bestBid']) * Decimal(midbase['price'])
+            alt_buy     = self.mean(altbase['bestAsk'], altbase['price'])
+            alt_sell    = self.mean(altmid['bestBid'], altmid['price']) * self.mean(midbase['bestBid'], midbase['price'])
             profit_near = (alt_sell-alt_buy)/alt_buy * Decimal('100')
         except Exception as e:
             print('Quote Fail')
@@ -118,21 +119,22 @@ class Bot(object):
         else:
             c.profit = Decimal('0')
             c.action = Action.wait
-        # print(c.alt, c.action, c.profit)
+        # print(c.alt, c.action, round(float(c.profit), 4), '%')
 
     def best_circle(self):
         #first find the biggest opportunity
-        print('Sorting the best opportunity...')
+        print('Sorting the best circle...')
         best_circle = self.circles[0]
-        for circle in self.circles:
-            self.find_arbitrage(circle)
-            if circle.profit>best_circle.profit:
-                best_circle = circle
+        for c in self.circles:
+            self.find_arbitrage(c)
+            if c.profit>best_circle.profit:
+                best_circle = c
         return best_circle
 
     def feed_coins(self, coins):
         for coin in coins:
             self.circles.append(Circle(coin))
+        print('')
             
     def round_by_increment(self, amount_dec, increment_dec):
         mul = Decimal(round(amount_dec/increment_dec))
@@ -145,65 +147,59 @@ class Bot(object):
         code = self.trade_code(coin_quote, coin_base)
         amount_quote = Decimal('0.0') # Default only when connection error
         try:
-            price = Decimal(self.market.get_ticker(code)[price_type])
+            quotebase = self.market.get_ticker(code)
+            price = self.mean(quotebase[price_type], quotebase['price'])
+        except Exception as e:
+            print("Ticker fail", e)
+            price = Decimal('0')
+
+        try:
             if command == 'buy':
-                try:
-                    available_base = Decimal(self.user.get_transferable(coin_base,'TRADE')['available'])*Decimal('0.95')
-                    # print('available_base', coin_base, available_base)
-                    amount_quote = self.round_by_increment(available_base/price, increment_quote)
-                except Exception as e:
-                    print("Account fail", e)
+                available_base = Decimal(self.user.get_transferable(coin_base,'TRADE')['available'])
+                amount_quote = self.round_by_increment(available_base/price, increment_quote)
+                print('increment is',increment_quote)
+
             elif command == 'sell':
-                try:
-                    avaliable_quote = Decimal(self.user.get_transferable(coin_quote,'TRADE')['available'])*Decimal('0.95')
-                    amount_quote = self.round_by_increment(avaliable_quote, increment_quote)
-                    # print('avaliable_quote', avaliable_quote)
-                except Exception as e:
-                    print("Account fail", e)
+                avaliable_quote = Decimal(self.user.get_transferable(coin_quote,'TRADE')['available'])
+                amount_quote = self.round_by_increment(avaliable_quote, increment_quote)
             else:
                 print('invalid command',command)
         except Exception as e:
-            print("Ticker fail", e)
-            
-        print('amount_quote', amount_quote)
-        if (amount_quote > Decimal(minSize[coin_quote])):
-            print(code, command, amount_quote, price)
+                print("Account fail", e)
+
+        if (amount_quote >= Decimal(minSize[coin_quote])):
+            print(command, code, amount_quote,' at ', ｐrice)
             try:
                 order_id = self.trade.create_limit_order(code, command, str(amount_quote), str(price))
-                print(command, "order success", order_id)
+                print(command, "order success", order_id, '\r\n')
             except Exception as e:
-                print(command, "order fail", e)
+                print(command, "order fail", e, '\r\n')
         else:
-            if (amount_quote == Decimal('0.0')):
-                print('coin balance not available')
-            else:
-                print('coin balance insufficient')
+            print('balance insufficient', amount_quote)
 
     def serial_trade(self, circle):
         #default: buy_near
         print('serial trade')
         #try sell at bestBid for not holpding alts too long
         if circle.action == Action.buy_far:
-            self.single_trade(circle.mid, circle.base, 'buy', 'price')
-            self.single_trade(circle.alt, circle.mid, 'buy', 'price')
+            self.single_trade(circle.mid, circle.base, 'buy', 'bestAsk')
+            # Setup cancel order mechanism
+            self.single_trade(circle.alt, circle.mid, 'buy', 'bestAsk')
             self.single_trade(circle.alt, circle.base, 'sell', 'bestBid')
         elif circle.action ==Action.buy_near:
-            self.single_trade(circle.alt, circle.base, 'buy', 'price')
+            self.single_trade(circle.alt, circle.base, 'buy', 'bestAsk')
             self.single_trade(circle.alt, circle.mid, 'sell', 'bestBid')
-            self.single_trade(circle.mid, circle.base, 'sell', 'price')
+            self.single_trade(circle.mid, circle.base, 'sell', 'bestBid')
 
     def run(self):
-        threshold=Decimal('0.31')
+        threshold=Decimal('0.3')
         while True:
             best_circle = self.best_circle()
             if best_circle.action != Action.wait and best_circle.profit>threshold:
                 print(best_circle.action, best_circle.alt, best_circle.profit)
                 self.serial_trade(best_circle)
             else:
-                print('skip', best_circle.alt, best_circle.profit)
-            # print('\r\n')
-
-#run
+                print('skip', best_circle.alt, round(float(best_circle.profit), 4),'%')
 
 # coins = ['VIDT','NANO','GO', 'ETH']
 print('Crypto Bot')
